@@ -4,7 +4,32 @@ on:
     paths:
       - zero-project.yml
 jobs:
+  template_check:
+    name: Only run initialization when its not a templated repository
+    runs-on: ubuntu-latest
+    outputs:
+      should_reinitalize: ${{ steps.set_output.outputs.should_reinitalize }}
+    steps:
+      - name: Do not run scaffolding on template repository
+        shell: bash
+        # This workflow runs when the `zero-project.yml` file is modified.
+        # This is the trick to re-init a repository, but we don't want to
+        # run this action if this file is modified in the origin template repository.
+        #
+        # Using the GitHub rest API allows us to identify if the current repository
+        # is a template repository or not.
+        run: |
+          echo "SHOULD_REINITALIZE=$(curl --silent -X GET \
+          -H \"Authorization: token $GITHUB_TOKEN\" \
+          -H \"Accept: application/vnd.github.baptiste-preview+json\" \
+          https://api.github.com/repos/$GITHUB_REPOSITORY \
+          | jq -r '.is_template==false')" >> $GITHUB_ENV
+      - id: set_output
+        run: echo "::set-output name=should_reinitalize::${{ env.SHOULD_REINITALIZE }}"
+
   setup:
+    needs: template_check
+    if: needs.template_check.outputs.should_reinitalize == 'true'
     name: Reinitialize repository
     runs-on: ubuntu-latest
     env:
